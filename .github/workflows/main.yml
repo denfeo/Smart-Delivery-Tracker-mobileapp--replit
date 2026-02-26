@@ -34,7 +34,7 @@ jobs:
         run: npm ci
       
       - name: Build web
-        run: npx expo export:web
+        run: npx expo export --platform web
       
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -42,7 +42,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './web-build'
+          path: './dist'
       
       - name: Deploy to GitHub Pages
         id: deployment
