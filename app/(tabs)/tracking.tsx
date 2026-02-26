@@ -12,594 +12,527 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Animated, {
+  FadeInDown,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
-  interpolate,
+  withSequence,
   withSpring,
+  interpolate,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useDelivery, Shipment } from "@/contexts/DeliveryContext";
 
 const { width } = Dimensions.get("window");
-const MAP_HEIGHT = 280;
 
-function PulsingDot() {
-  const pulse = useSharedValue(0);
+const STATUS_RU: Record<string, string> = {
+  Transit: "В пути",
+  Delivered: "Доставлено",
+  "On Process": "Обработка",
+  Pending: "Ожидает",
+};
+
+const TIMELINE_STEPS = [
+  { key: "order", label: "Заказ принят", icon: "checkmark-circle" as const },
+  { key: "pickup", label: "Забрано", icon: "cube-outline" as const },
+  { key: "transit", label: "В пути", icon: "car-outline" as const },
+  { key: "delivery", label: "Доставлено", icon: "home-outline" as const },
+];
+
+function AnimatedTruckIcon() {
+  const translateX = useSharedValue(0);
 
   useEffect(() => {
-    pulse.value = withRepeat(withTiming(1, { duration: 1200 }), -1, true);
+    translateX.value = withRepeat(
+      withSequence(
+        withTiming(10, { duration: 800 }),
+        withTiming(0, { duration: 800 })
+      ),
+      -1,
+      false
+    );
   }, []);
 
-  const outerStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pulse.value, [0, 1], [0.4, 0]),
-    transform: [{ scale: interpolate(pulse.value, [0, 1], [1, 2.2]) }],
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
   }));
 
   return (
-    <View style={styles.pulseWrap}>
-      <Animated.View style={[styles.pulseOuter, outerStyle]} />
-      <View style={styles.pulseDot} />
-    </View>
+    <Animated.View style={style}>
+      <MaterialCommunityIcons name="truck-fast-outline" size={32} color={Colors.accent} />
+    </Animated.View>
   );
 }
 
-function MapView({ shipment }: { shipment: Shipment }) {
+function PulsePin() {
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    scale.value = withRepeat(withTiming(2.5, { duration: 1200 }), -1, false);
+    opacity.value = withRepeat(withTiming(0, { duration: 1200 }), -1, false);
+  }, []);
+
+  const ringStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
   return (
-    <View style={styles.mapContainer}>
-      <View style={styles.mapBg}>
-        {/* Grid lines for map feel */}
-        {Array.from({ length: 6 }).map((_, i) => (
-          <View key={`h${i}`} style={[styles.mapGridH, { top: (MAP_HEIGHT / 6) * i }]} />
-        ))}
-        {Array.from({ length: 8 }).map((_, i) => (
-          <View key={`v${i}`} style={[styles.mapGridV, { left: (width / 8) * i }]} />
-        ))}
-
-        {/* Route path */}
-        <View style={styles.routeLine}>
-          <View style={styles.routeLineSegment1} />
-          <View style={styles.routeLineSegment2} />
-        </View>
-
-        {/* Origin dot */}
-        <View style={[styles.originDot, { bottom: 60, left: 60 }]}>
-          <Ionicons name="navigate" size={18} color={Colors.text} />
-        </View>
-
-        {/* Destination pin */}
-        <View style={[styles.destinationPin, { top: 50, right: 80 }]}>
-          <View style={styles.pinCircle}>
-            <View style={styles.pinInner} />
-          </View>
-          <View style={styles.pinStem} />
-        </View>
-
-        {/* Current position */}
-        <View style={[styles.courierPosition, { bottom: 95, left: 140 }]}>
-          <PulsingDot />
-        </View>
+    <View style={styles.pinWrap}>
+      <Animated.View style={[styles.pinRing, ringStyle]} />
+      <View style={styles.pinDot}>
+        <Ionicons name="location" size={13} color="#FFF" />
       </View>
-
-      {/* Map overlay gradient */}
-      <View style={styles.mapOverlay} pointerEvents="none" />
     </View>
   );
 }
 
-function ProgressTimeline({ progress }: { progress: number }) {
-  const steps = [
-    { label: "Order Placed", icon: "checkmark-circle" as const, done: true },
-    { label: "Picked Up", icon: "checkmark-circle" as const, done: progress > 0.1 },
-    { label: "In Transit", icon: progress > 0.4 ? "checkmark-circle" as const : "radio-button-on" as const, done: progress > 0.4 },
-    { label: "Delivered", icon: "checkmark-circle" as const, done: progress >= 1 },
-  ];
-  return (
-    <View style={styles.timeline}>
-      {steps.map((step, i) => (
-        <View key={i} style={styles.timelineStep}>
-          <View style={styles.timelineLeft}>
-            <Ionicons
-              name={step.icon}
-              size={20}
-              color={step.done ? Colors.accent : Colors.border}
-            />
-            {i < steps.length - 1 && (
-              <View style={[styles.timelineConnector, step.done && styles.timelineConnectorActive]} />
-            )}
-          </View>
-          <Text style={[styles.timelineLabel, step.done && styles.timelineLabelActive]}>
-            {step.label}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function ShipmentSelector({
-  shipments,
-  selected,
-  onSelect,
+function TimelineStep({
+  step,
+  index,
+  activeStep,
 }: {
-  shipments: Shipment[];
-  selected: string;
-  onSelect: (id: string) => void;
+  step: (typeof TIMELINE_STEPS)[0];
+  index: number;
+  activeStep: number;
 }) {
+  const isDone = index < activeStep;
+  const isActive = index === activeStep;
+
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorContent}>
-      {shipments.map((s) => {
-        const active = s.id === selected;
-        return (
-          <Pressable
-            key={s.id}
-            onPress={() => {
-              Haptics.selectionAsync();
-              onSelect(s.id);
-            }}
-            style={[styles.selectorChip, active && styles.selectorChipActive]}
-          >
-            <Text style={[styles.selectorText, active && styles.selectorTextActive]} numberOfLines={1}>
-              {s.trackingId}
+    <Animated.View
+      entering={FadeInDown.delay(300 + index * 80).springify()}
+      style={styles.timelineStep}
+    >
+      <View style={styles.timelineLeft}>
+        <View
+          style={[
+            styles.timelineCircle,
+            isDone && styles.timelineCircleDone,
+            isActive && styles.timelineCircleActive,
+          ]}
+        >
+          <Ionicons
+            name={isDone ? "checkmark" : step.icon}
+            size={14}
+            color={isDone || isActive ? "#FFF" : Colors.textSecondary}
+          />
+        </View>
+        {index < TIMELINE_STEPS.length - 1 && (
+          <View style={[styles.timelineLine, isDone && styles.timelineLineDone]} />
+        )}
+      </View>
+      <View style={styles.timelineContent}>
+        <Text
+          style={[
+            styles.timelineLabel,
+            (isDone || isActive) && styles.timelineLabelActive,
+          ]}
+        >
+          {step.label}
+        </Text>
+        {isActive && (
+          <Text style={styles.timelineStatusText}>Текущий статус</Text>
+        )}
+      </View>
+    </Animated.View>
+  );
+}
+
+function ShipmentPickerItem({
+  item,
+  isSelected,
+  onPress,
+}: {
+  item: Shipment;
+  isSelected: boolean;
+  onPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <Animated.View style={scaleStyle}>
+      <Pressable
+        onPressIn={() => (scale.value = withSpring(0.97, { damping: 15 }))}
+        onPressOut={() => (scale.value = withSpring(1, { damping: 15 }))}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPress();
+        }}
+        style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
+      >
+        <View style={styles.pickerItemInner}>
+          <MaterialCommunityIcons
+            name="package-variant-closed"
+            size={18}
+            color={isSelected ? "#FFF" : Colors.textSecondary}
+          />
+          <View>
+            <Text
+              style={[styles.pickerItemId, isSelected && styles.pickerItemIdActive]}
+            >
+              #{item.trackingId}
             </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+            <Text
+              style={[styles.pickerItemName, isSelected && styles.pickerItemNameActive]}
+              numberOfLines={1}
+            >
+              {item.itemName}
+            </Text>
+          </View>
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
 export default function TrackingScreen() {
   const insets = useSafeAreaInsets();
   const { shipments } = useDelivery();
-  const activeShipments = shipments.filter((s) => s.status !== "Delivered");
-  const [selectedId, setSelectedId] = useState(activeShipments[0]?.id ?? shipments[0]?.id);
+  const [selectedId, setSelectedId] = useState(shipments[0]?.id ?? "");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const selected = shipments.find((s) => s.id === selectedId) ?? shipments[0];
 
+  const activeStep = selected
+    ? selected.status === "Delivered"
+      ? 4
+      : selected.status === "Transit"
+      ? 2
+      : selected.status === "On Process"
+      ? 1
+      : 0
+    : 0;
+
+  const mapProgress = useSharedValue(0);
+  const truckX = useSharedValue(0);
+  const mapWidth = width - 40;
+
+  useEffect(() => {
+    if (!selected) return;
+    const target = selected.progress;
+    mapProgress.value = withTiming(target, { duration: 900 });
+    truckX.value = withTiming((mapWidth - 52) * target, { duration: 900 });
+  }, [selected?.id, selected?.progress]);
+
+  const progressBarStyle = useAnimatedStyle(() => ({
+    width: `${mapProgress.value * 100}%`,
+  }));
+
+  const truckStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: truckX.value }],
+  }));
+
   if (!selected) {
     return (
-      <View style={[styles.root, { paddingTop: topPad, alignItems: "center", justifyContent: "center" }]}>
-        <MaterialCommunityIcons name="map-marker-off" size={64} color={Colors.border} />
-        <Text style={styles.emptyTitle}>No active shipments</Text>
-        <Pressable style={styles.emptyBtn} onPress={() => router.push("/new-delivery")}>
-          <Text style={styles.emptyBtnText}>Create Delivery</Text>
-        </Pressable>
+      <View style={[styles.root, { paddingTop: topPad }]}>
+        <View style={styles.emptyState}>
+          <MaterialCommunityIcons name="map-search-outline" size={64} color={Colors.textSecondary} />
+          <Text style={styles.emptyTitle}>Нет посылок для отслеживания</Text>
+          <Pressable style={styles.emptyBtn} onPress={() => router.push("/new-delivery")}>
+            <Text style={styles.emptyBtnText}>Создать доставку</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={[styles.root, { paddingTop: topPad }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Location Tracking</Text>
-        <Pressable onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
-          <Ionicons name="ellipsis-vertical" size={20} color={Colors.text} />
-        </Pressable>
-      </View>
-
-      {/* Selector */}
-      <ShipmentSelector
-        shipments={shipments}
-        selected={selectedId}
-        onSelect={setSelectedId}
-      />
-
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: bottomPad + 100 }}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 100 },
+        ]}
       >
-        {/* Map */}
-        <MapView shipment={selected} />
+        {/* Header */}
+        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Отслеживание</Text>
+            <Text style={styles.headerSub}>Статус в реальном времени</Text>
+          </View>
+          <View style={styles.liveChip}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
+        </Animated.View>
 
-        {/* Dark Detail Card */}
-        <View style={styles.detailCard}>
-          {/* Booking ID & Status */}
-          <View style={styles.detailCardHeader}>
-            <View>
-              <Text style={styles.detailLabel}>Booking Id:</Text>
-              <Text style={styles.detailBookingId}>{selected.trackingId}</Text>
+        {/* Shipment picker */}
+        <Animated.View entering={FadeInDown.delay(60).springify()}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pickerRow}
+          >
+            {shipments.map((s) => (
+              <ShipmentPickerItem
+                key={s.id}
+                item={s}
+                isSelected={s.id === selectedId}
+                onPress={() => setSelectedId(s.id)}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
+
+        {/* Map card */}
+        <Animated.View entering={FadeInDown.delay(120).springify()} style={styles.mapCard}>
+          <View style={styles.mapCardAccentBar} />
+
+          {/* Mock map */}
+          <View style={styles.mockMap}>
+            <View style={styles.mockMapGrid}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <View key={i} style={styles.mockMapRow}>
+                  {Array.from({ length: 8 }).map((__, j) => (
+                    <View key={j} style={styles.mockMapCell} />
+                  ))}
+                </View>
+              ))}
             </View>
-            <View>
-              <Text style={[styles.detailLabel, { textAlign: "right" }]}>Status</Text>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusPillText}>{selected.status}</Text>
+
+            {/* Route line */}
+            <View style={styles.routeLine}>
+              <View style={styles.routeLineBg} />
+              <Animated.View style={[styles.routeLineFill, progressBarStyle]} />
+            </View>
+
+            {/* Origin */}
+            <View style={[styles.mapPin, { left: 8, bottom: 20 }]}>
+              <View style={[styles.mapPinDot, { backgroundColor: Colors.info }]} />
+              <Text style={styles.mapPinLabel} numberOfLines={1}>{selected.from}</Text>
+            </View>
+
+            {/* Truck */}
+            <Animated.View style={[styles.truckPin, truckStyle]}>
+              <AnimatedTruckIcon />
+            </Animated.View>
+
+            {/* Destination */}
+            <PulsePin />
+            <View style={[styles.mapPin, { right: 8, top: 20 }]}>
+              <View style={[styles.mapPinDot, { backgroundColor: Colors.accent }]} />
+              <Text style={styles.mapPinLabel} numberOfLines={1}>{selected.to}</Text>
+            </View>
+          </View>
+
+          {/* Info row */}
+          <View style={styles.mapInfoRow}>
+            <View style={styles.mapInfoItem}>
+              <Ionicons name="location-outline" size={15} color={Colors.accent} />
+              <View>
+                <Text style={styles.mapInfoLabel}>Откуда</Text>
+                <Text style={styles.mapInfoValue} numberOfLines={1}>{selected.from}</Text>
+              </View>
+            </View>
+            <View style={styles.mapInfoDivider} />
+            <View style={styles.mapInfoItem}>
+              <Ionicons name="flag-outline" size={15} color={Colors.success} />
+              <View>
+                <Text style={styles.mapInfoLabel}>Куда</Text>
+                <Text style={styles.mapInfoValue} numberOfLines={1}>{selected.to}</Text>
               </View>
             </View>
           </View>
+        </Animated.View>
 
-          {/* Progress timeline */}
-          <ProgressTimeline progress={selected.progress} />
-
-          {/* Dates */}
-          <View style={styles.datesRow}>
+        {/* Status card */}
+        <Animated.View entering={FadeInDown.delay(180).springify()} style={styles.statusCard}>
+          <View style={styles.statusCardTop}>
             <View>
-              <Text style={styles.detailLabel}>Created, {selected.createdDate}</Text>
-              <Text style={styles.detailCity}>{selected.from}</Text>
+              <Text style={styles.statusCardId}>#{selected.trackingId}</Text>
+              <Text style={styles.statusCardName}>{selected.itemName}</Text>
             </View>
-            <MaterialCommunityIcons name="package-variant" size={50} color="#C0924A" />
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={styles.detailLabel}>Estimated, {selected.estimatedDate}</Text>
-              <Text style={styles.detailCity}>{selected.to}</Text>
-            </View>
-          </View>
-
-          {/* Metadata */}
-          <View style={styles.metaGrid}>
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Form</Text>
-              <Text style={styles.metaValue}>{selected.from}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>To</Text>
-              <Text style={styles.metaValue}>{selected.to}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Customer</Text>
-              <Text style={styles.metaValue}>{selected.customer}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Order Cost</Text>
-              <Text style={styles.metaValue}>{selected.orderCost}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Quantity</Text>
-              <Text style={styles.metaValue}>{selected.quantity}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Weight</Text>
-              <Text style={styles.metaValue}>{selected.weight}</Text>
-            </View>
-          </View>
-
-          {/* Courier */}
-          <View style={styles.courierRow}>
-            <View style={styles.courierAvatarCircle}>
-              <Text style={styles.courierAvatarText}>{selected.courierAvatar}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.courierName}>{selected.courierName}</Text>
-              <Text style={styles.courierRole}>Courier</Text>
-            </View>
-            <Pressable
-              style={[styles.courierActionBtn, { backgroundColor: Colors.accent }]}
-              onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor:
+                    selected.status === "Transit"
+                      ? Colors.transit + "20"
+                      : selected.status === "Delivered"
+                      ? Colors.success + "20"
+                      : Colors.info + "20",
+                },
+              ]}
             >
-              <Ionicons name="call" size={18} color="#FFF" />
-            </Pressable>
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  {
+                    color:
+                      selected.status === "Transit"
+                        ? Colors.transit
+                        : selected.status === "Delivered"
+                        ? Colors.success
+                        : Colors.info,
+                  },
+                ]}
+              >
+                {STATUS_RU[selected.status] ?? selected.status}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.etaRow}>
+            <Ionicons name="time-outline" size={14} color={Colors.textSecondary} />
+            <Text style={styles.etaText}>
+              Ожидаем{" "}
+              <Text style={{ color: Colors.accent, fontFamily: "Poppins_600SemiBold" }}>
+                {selected.estimatedDate}
+              </Text>
+            </Text>
+          </View>
+
+          {/* Chat with courier */}
+          {selected.courierId && (
             <Pressable
-              style={[styles.courierActionBtn, { backgroundColor: "#FFF" }]}
+              style={styles.chatBtn}
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 router.push({ pathname: "/chat/[id]", params: { id: selected.id } });
               }}
             >
-              <Ionicons name="chatbubble-outline" size={18} color={Colors.text} />
+              <Ionicons name="chatbubble-ellipses-outline" size={17} color="#FFF" />
+              <Text style={styles.chatBtnText}>Написать курьеру</Text>
             </Pressable>
+          )}
+        </Animated.View>
+
+        {/* Timeline */}
+        <Animated.View entering={FadeInDown.delay(240).springify()} style={styles.timelineCard}>
+          <Text style={styles.timelineTitle}>История движения</Text>
+          <View style={styles.timeline}>
+            {TIMELINE_STEPS.map((step, index) => (
+              <TimelineStep key={step.key} step={step} index={index} activeStep={activeStep} />
+            ))}
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
+  scrollContent: { paddingHorizontal: 20 },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    paddingTop: 8,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingTop: 10, paddingBottom: 18,
   },
-  title: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 20,
-    color: Colors.text,
+  headerTitle: { fontFamily: "Poppins_700Bold", fontSize: 22, color: Colors.text },
+  headerSub: { fontFamily: "Poppins_400Regular", fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  liveChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: Colors.success + "15", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
   },
-  selectorContent: {
-    paddingHorizontal: 20,
-    gap: 8,
-    paddingBottom: 12,
+  liveDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.success },
+  liveText: { fontFamily: "Poppins_700Bold", fontSize: 11, color: Colors.success },
+  pickerRow: { gap: 8, paddingBottom: 16 },
+  pickerItem: {
+    backgroundColor: Colors.cardBackground, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10, elevation: 2,
   },
-  selectorChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  pickerItemActive: { backgroundColor: Colors.accent },
+  pickerItemInner: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pickerItemId: { fontFamily: "Poppins_600SemiBold", fontSize: 13, color: Colors.text },
+  pickerItemIdActive: { color: "#FFF" },
+  pickerItemName: { fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.textSecondary, maxWidth: 120 },
+  pickerItemNameActive: { color: "rgba(255,255,255,0.8)" },
+  mapCard: {
+    backgroundColor: Colors.cardBackground, borderRadius: 22,
+    overflow: "hidden", marginBottom: 16, elevation: 4,
   },
-  selectorChipActive: {
-    backgroundColor: Colors.accent,
-    borderColor: Colors.accent,
+  mapCardAccentBar: {
+    position: "absolute", top: 0, left: 0, right: 0, height: 3,
+    backgroundColor: Colors.accent, zIndex: 10,
   },
-  selectorText: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 13,
-    color: Colors.textSecondary,
+  mockMap: {
+    height: 180, backgroundColor: "#E8EFF5",
+    overflow: "hidden", position: "relative", marginTop: 3,
   },
-  selectorTextActive: {
-    color: "#FFF",
-  },
-  mapContainer: {
-    height: MAP_HEIGHT,
-    marginHorizontal: 0,
-    overflow: "hidden",
-  },
-  mapBg: {
-    flex: 1,
-    backgroundColor: "#E8EFF4",
-    position: "relative",
-  },
-  mapGridH: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: "#D0DBE2",
-  },
-  mapGridV: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: "#D0DBE2",
-  },
+  mockMapGrid: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+  mockMapRow: { flex: 1, flexDirection: "row" },
+  mockMapCell: { flex: 1, borderWidth: 0.5, borderColor: "rgba(0,0,0,0.05)" },
   routeLine: {
-    position: "absolute",
-    bottom: 80,
-    left: 80,
-    width: 220,
-    height: 2,
+    position: "absolute", bottom: 52, left: 30, right: 30, height: 3, borderRadius: 1.5, overflow: "hidden",
   },
-  routeLineSegment1: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    width: 100,
-    height: 2,
-    backgroundColor: "#888",
-    borderRadius: 1,
+  routeLineBg: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.1)" },
+  routeLineFill: { position: "absolute", top: 0, left: 0, bottom: 0, backgroundColor: Colors.accent },
+  truckPin: {
+    position: "absolute", bottom: 36, left: 8,
   },
-  routeLineSegment2: {
-    position: "absolute",
-    bottom: 0,
-    left: 100,
-    width: 120,
-    height: 2,
-    borderStyle: "dashed",
-    borderWidth: 1.5,
-    borderColor: "#AAA",
+  mapPin: {
+    position: "absolute", flexDirection: "row", alignItems: "center", gap: 4,
   },
-  originDot: {
-    position: "absolute",
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#1C1C1E",
-    alignItems: "center",
-    justifyContent: "center",
+  mapPinDot: { width: 10, height: 10, borderRadius: 5 },
+  mapPinLabel: {
+    fontFamily: "Poppins_600SemiBold", fontSize: 10, color: Colors.text,
+    backgroundColor: "rgba(255,255,255,0.9)", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5,
+    maxWidth: 80,
   },
-  destinationPin: {
-    position: "absolute",
-    alignItems: "center",
+  pinWrap: {
+    position: "absolute", right: 20, top: 14, width: 26, height: 26, alignItems: "center", justifyContent: "center",
   },
-  pinCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+  pinRing: {
+    position: "absolute", width: 26, height: 26, borderRadius: 13,
+    backgroundColor: Colors.accent + "30", borderWidth: 1, borderColor: Colors.accent + "50",
   },
-  pinInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#FFF",
+  pinDot: {
+    width: 22, height: 22, borderRadius: 11, backgroundColor: Colors.accent,
+    alignItems: "center", justifyContent: "center",
   },
-  pinStem: {
-    width: 2,
-    height: 8,
-    backgroundColor: Colors.accent,
+  mapInfoRow: {
+    flexDirection: "row", padding: 16, alignItems: "center",
   },
-  courierPosition: {
-    position: "absolute",
+  mapInfoItem: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  mapInfoDivider: { width: 1, height: 36, backgroundColor: Colors.border, marginHorizontal: 12 },
+  mapInfoLabel: { fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.textSecondary },
+  mapInfoValue: { fontFamily: "Poppins_600SemiBold", fontSize: 13, color: Colors.text, maxWidth: 110 },
+  statusCard: {
+    backgroundColor: Colors.cardBackground, borderRadius: 22, padding: 18, marginBottom: 16, elevation: 3,
   },
-  pulseWrap: {
-    width: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
+  statusCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },
+  statusCardId: { fontFamily: "Poppins_700Bold", fontSize: 16, color: Colors.text },
+  statusCardName: { fontFamily: "Poppins_400Regular", fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10 },
+  statusBadgeText: { fontFamily: "Poppins_600SemiBold", fontSize: 12 },
+  etaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14 },
+  etaText: { fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.textSecondary },
+  chatBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: Colors.accent, borderRadius: 14, paddingVertical: 13, elevation: 3,
   },
-  pulseOuter: {
-    position: "absolute",
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: Colors.accent,
+  chatBtnText: { fontFamily: "Poppins_600SemiBold", fontSize: 14, color: "#FFF" },
+  timelineCard: {
+    backgroundColor: Colors.cardBackground, borderRadius: 22, padding: 18, marginBottom: 16, elevation: 3,
   },
-  pulseDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.accent,
-    borderWidth: 2,
-    borderColor: "#FFF",
+  timelineTitle: { fontFamily: "Poppins_700Bold", fontSize: 16, color: Colors.text, marginBottom: 16 },
+  timeline: { gap: 0 },
+  timelineStep: { flexDirection: "row", alignItems: "flex-start" },
+  timelineLeft: { alignItems: "center", width: 36 },
+  timelineCircle: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: Colors.background, borderWidth: 2, borderColor: Colors.border,
+    alignItems: "center", justifyContent: "center",
   },
-  mapOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 40,
-    backgroundColor: "transparent",
-  },
-  detailCard: {
-    backgroundColor: Colors.darkCard,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 22,
-    marginTop: -14,
-  },
-  detailCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  detailLabel: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 12,
-    color: "rgba(255,255,255,0.5)",
-  },
-  detailBookingId: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    color: "#FFFFFF",
-    marginTop: 2,
-  },
-  statusPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 10,
-    backgroundColor: Colors.transit,
-    marginTop: 4,
-  },
-  statusPillText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: "#FFF",
-  },
-  timeline: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 20,
-  },
-  timelineStep: {
-    alignItems: "center",
-    gap: 4,
-    flex: 1,
-  },
-  timelineLeft: {
-    alignItems: "center",
-  },
-  timelineConnector: {
-    width: "100%",
-    height: 2,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    marginTop: 2,
-  },
-  timelineConnectorActive: {
-    backgroundColor: Colors.accent,
-  },
-  timelineLabel: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 10,
-    color: "rgba(255,255,255,0.4)",
-    textAlign: "center",
-  },
-  timelineLabelActive: {
-    color: "rgba(255,255,255,0.85)",
-  },
-  datesRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-    backgroundColor: Colors.darkCardSecondary,
-    borderRadius: 14,
-    padding: 14,
-  },
-  detailCity: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
-    color: "#FFFFFF",
-    marginTop: 4,
-  },
-  metaGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 20,
-  },
-  metaItem: {
-    width: "45%",
-  },
-  metaLabel: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 12,
-    color: "rgba(255,255,255,0.45)",
-  },
-  metaValue: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
-    color: "#FFFFFF",
-    marginTop: 2,
-  },
-  courierRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
-  },
-  courierAvatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  courierAvatarText: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 14,
-    color: "#FFF",
-  },
-  courierName: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 14,
-    color: "#FFFFFF",
-  },
-  courierRole: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 12,
-    color: "rgba(255,255,255,0.5)",
-  },
-  courierActionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 18,
-    color: Colors.text,
-    marginTop: 12,
-  },
+  timelineCircleDone: { backgroundColor: Colors.success, borderColor: Colors.success },
+  timelineCircleActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  timelineLine: { width: 2, height: 36, backgroundColor: Colors.border, marginVertical: 2 },
+  timelineLineDone: { backgroundColor: Colors.success },
+  timelineContent: { flex: 1, paddingLeft: 12, paddingBottom: 24, paddingTop: 5 },
+  timelineLabel: { fontFamily: "Poppins_500Medium", fontSize: 14, color: Colors.textSecondary },
+  timelineLabelActive: { color: Colors.text, fontFamily: "Poppins_600SemiBold" },
+  timelineStatusText: { fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.accent, marginTop: 2 },
+  emptyState: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingTop: 120 },
+  emptyTitle: { fontFamily: "Poppins_700Bold", fontSize: 18, color: Colors.text, textAlign: "center" },
   emptyBtn: {
-    marginTop: 16,
-    backgroundColor: Colors.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
+    backgroundColor: Colors.accent, borderRadius: 14, paddingHorizontal: 24, paddingVertical: 13, marginTop: 8,
   },
-  emptyBtnText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 14,
-    color: "#FFF",
-  },
+  emptyBtnText: { fontFamily: "Poppins_600SemiBold", fontSize: 14, color: "#FFF" },
 });

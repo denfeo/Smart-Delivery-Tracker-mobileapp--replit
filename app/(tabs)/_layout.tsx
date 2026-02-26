@@ -6,7 +6,6 @@ import { Platform, StyleSheet, View } from "react-native";
 import React from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 import Colors from "@/constants/colors";
 
 function NativeTabLayout() {
@@ -14,26 +13,25 @@ function NativeTabLayout() {
     <NativeTabs>
       <NativeTabs.Trigger name="index">
         <Icon sf={{ default: "house", selected: "house.fill" }} />
-        <Label>Home</Label>
+        <Label>Главная</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="shipments">
         <Icon sf={{ default: "shippingbox", selected: "shippingbox.fill" }} />
-        <Label>Shipments</Label>
+        <Label>Посылки</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="tracking">
         <Icon sf={{ default: "location", selected: "location.fill" }} />
-        <Label>Tracking</Label>
+        <Label>Трекинг</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
-        <Label>Profile</Label>
+        <Label>Профиль</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
 
 function ClassicTabLayout() {
-  const insets = useSafeAreaInsets();
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
@@ -59,14 +57,14 @@ function ClassicTabLayout() {
           ) : null,
         tabBarLabelStyle: {
           fontFamily: "Poppins_500Medium",
-          fontSize: 11,
+          fontSize: 10,
         },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: "Главная",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
           ),
@@ -75,7 +73,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="shipments"
         options={{
-          title: "Shipments",
+          title: "Посылки",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="cube-outline" size={size} color={color} />
           ),
@@ -84,7 +82,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="tracking"
         options={{
-          title: "Tracking",
+          title: "Трекинг",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="location-outline" size={size} color={color} />
           ),
@@ -93,7 +91,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: "Профиль",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),
