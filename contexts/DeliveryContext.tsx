@@ -53,6 +53,7 @@ interface DeliveryContextValue {
   updateStatus: (id: string, status: ShipmentStatus) => void;
   sendMessage: (shipmentId: string, text: string, sender: "user" | "courier") => void;
   deleteShipment: (id: string) => void;
+  clearAllData: () => void;
 }
 
 const DeliveryContext = createContext<DeliveryContextValue | null>(null);
@@ -280,6 +281,13 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
     [shipments, persist]
   );
 
+  const clearAllData = useCallback(async () => {
+    setShipments([]);
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }, []);
+
   const value = useMemo(
     () => ({
       shipments,
@@ -288,8 +296,9 @@ export function DeliveryProvider({ children }: { children: React.ReactNode }) {
       updateStatus,
       sendMessage,
       deleteShipment,
+      clearAllData,
     }),
-    [shipments, addShipment, updateStatus, sendMessage, deleteShipment]
+    [shipments, addShipment, updateStatus, sendMessage, deleteShipment, clearAllData]
   );
 
   return (
