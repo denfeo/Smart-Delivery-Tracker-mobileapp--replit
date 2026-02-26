@@ -1,13 +1,13 @@
-import React, { useRef } from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   Pressable,
   Platform,
   TextInput,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -16,10 +16,23 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
+  withDelay,
+  FadeInDown,
+  interpolate,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useDelivery, Shipment } from "@/contexts/DeliveryContext";
+
+const { width } = Dimensions.get("window");
+
+const STATUS_RU: Record<string, string> = {
+  Transit: "В пути",
+  Delivered: "Доставлено",
+  "On Process": "Обработка",
+  Pending: "Ожидает",
+};
 
 function StatusBadge({ status }: { status: string }) {
   const color =
@@ -32,68 +45,83 @@ function StatusBadge({ status }: { status: string }) {
       : Colors.accent;
   return (
     <View style={[styles.badge, { backgroundColor: color + "20" }]}>
-      <Text style={[styles.badgeText, { color }]}>{status}</Text>
+      <View style={[styles.badgeDot, { backgroundColor: color }]} />
+      <Text style={[styles.badgeText, { color }]}>{STATUS_RU[status] ?? status}</Text>
     </View>
   );
 }
 
-function ProgressBar({ progress }: { progress: number }) {
-  const steps = ["Confirmed", "Dispatched", "In Transit", "Delivered"];
+function AnimatedProgressBar({ progress }: { progress: number }) {
+  const width = useSharedValue(0);
+
+  useEffect(() => {
+    width.value = withDelay(300, withTiming(progress, { duration: 900 }));
+  }, [progress]);
+
+  const barStyle = useAnimatedStyle(() => ({
+    width: `${width.value * 100}%`,
+  }));
+
+  const steps = ["Принято", "Отправлено", "В пути", "Доставлено"];
   const activeStep = Math.floor(progress * (steps.length - 1));
+
   return (
-    <View style={styles.progressContainer}>
-      {steps.map((_, i) => (
-        <React.Fragment key={i}>
-          <View
-            style={[
-              styles.progressDot,
-              i <= activeStep && styles.progressDotActive,
-            ]}
-          />
-          {i < steps.length - 1 && (
-            <View
-              style={[
-                styles.progressLine,
-                i < activeStep && styles.progressLineActive,
-              ]}
-            />
-          )}
-        </React.Fragment>
-      ))}
+    <View style={styles.progressWrap}>
+      <View style={styles.progressDots}>
+        {steps.map((_, i) => (
+          <React.Fragment key={i}>
+            <View style={[styles.progressDot, i <= activeStep && styles.progressDotActive]} />
+            {i < steps.length - 1 && (
+              <View style={styles.progressLineContainer}>
+                <View style={styles.progressLineBase} />
+                {i < activeStep && <View style={styles.progressLineFill} />}
+              </View>
+            )}
+          </React.Fragment>
+        ))}
+      </View>
     </View>
   );
 }
 
-function ShipmentCard({ item }: { item: Shipment }) {
+function ShipmentCard({ item, index }: { item: Shipment; index: number }) {
   const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <Animated.View style={animStyle}>
-      <Pressable
-        onPressIn={() => {
-          scale.value = withSpring(0.97);
-        }}
-        onPressOut={() => {
-          scale.value = withSpring(1);
-        }}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push({ pathname: "/shipment/[id]", params: { id: item.id } });
-        }}
-        style={styles.shipmentCard}
-      >
-        <View style={styles.shipmentCardLeft}>
-          <View style={styles.packageIconWrap}>
-            <MaterialCommunityIcons name="package-variant-closed" size={26} color={Colors.accent} />
+    <Animated.View entering={FadeInDown.delay(index * 80).springify()}>
+      <Animated.View style={scaleStyle}>
+        <Pressable
+          onPressIn={() => { scale.value = withSpring(0.97, { damping: 15 }); }}
+          onPressOut={() => { scale.value = withSpring(1, { damping: 15 }); }}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push({ pathname: "/shipment/[id]", params: { id: item.id } });
+          }}
+          style={styles.shipmentCard}
+        >
+          <View style={styles.shipmentCardLeft}>
+            <View style={styles.packageIconWrap}>
+              <MaterialCommunityIcons
+                name={item.status === "Delivered" ? "package-variant-closed-check" : "package-variant-closed"}
+                size={24}
+                color={item.status === "Delivered" ? Colors.success : Colors.accent}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.trackingId}>#{item.trackingId}</Text>
+              <Text style={styles.itemName} numberOfLines={1}>{item.itemName}</Text>
+              <View style={styles.routeRow}>
+                <Ionicons name="radio-button-on" size={9} color={Colors.accent} />
+                <Text style={styles.routeText} numberOfLines={1}>{item.from}</Text>
+                <Ionicons name="arrow-forward" size={9} color={Colors.textSecondary} />
+                <Text style={styles.routeText} numberOfLines={1}>{item.to}</Text>
+              </View>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.trackingId}>ID: {item.trackingId}</Text>
-            <Text style={styles.itemName} numberOfLines={1}>{item.itemName}</Text>
-          </View>
-        </View>
-        <StatusBadge status={item.status} />
-      </Pressable>
+          <StatusBadge status={item.status} />
+        </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -103,34 +131,44 @@ function QuickActionCard({
   subtitle,
   iconName,
   color,
+  bgColor,
   onPress,
+  delay,
 }: {
   title: string;
   subtitle: string;
   iconName: keyof typeof Ionicons.glyphMap;
   color: string;
+  bgColor: string;
   onPress: () => void;
+  delay: number;
 }) {
   const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <Animated.View style={[styles.quickCard, animStyle]}>
+    <Animated.View entering={FadeInDown.delay(delay).springify()} style={{ flex: 1 }}>
+      <Animated.View style={[styles.quickCard, { backgroundColor: bgColor }, scaleStyle]}>
       <Pressable
-        onPressIn={() => (scale.value = withSpring(0.95))}
-        onPressOut={() => (scale.value = withSpring(1))}
+        onPressIn={() => (scale.value = withSpring(0.95, { damping: 15 }))}
+        onPressOut={() => (scale.value = withSpring(1, { damping: 15 }))}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           onPress();
         }}
         style={{ flex: 1 }}
       >
-        <View style={[styles.quickCardIcon, { backgroundColor: color + "15" }]}>
-          <Ionicons name={iconName} size={28} color={color} />
+        <View style={[styles.quickCardIcon, { backgroundColor: color + "20" }]}>
+          <Ionicons name={iconName} size={26} color={color} />
         </View>
-        <Text style={styles.quickCardTitle}>{title}</Text>
-        <Text style={styles.quickCardSubtitle}>{subtitle}</Text>
+        <Text style={[styles.quickCardTitle, { color: bgColor === Colors.accent ? "#FFF" : Colors.text }]}>
+          {title}
+        </Text>
+        <Text style={[styles.quickCardSubtitle, { color: bgColor === Colors.accent ? "rgba(255,255,255,0.7)" : Colors.textSecondary }]}>
+          {subtitle}
+        </Text>
       </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -139,8 +177,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { shipments } = useDelivery();
   const currentShipment = shipments.find((s) => s.status !== "Delivered") ?? shipments[0];
-  const recent = shipments.slice(0, 3);
-
+  const recent = shipments.slice(0, 4);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   return (
@@ -149,68 +186,75 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 90 },
+          { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 100 },
         ]}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.header}>
           <View>
             <View style={styles.deliveryToRow}>
-              <Ionicons name="location-outline" size={14} color={Colors.textSecondary} />
-              <Text style={styles.deliveryToLabel}>Delivery to</Text>
+              <Ionicons name="location" size={13} color={Colors.accent} />
+              <Text style={styles.deliveryToLabel}>Доставка в</Text>
             </View>
-            <Text style={styles.deliveryAddress}>11/2 Diriyah, Riyadh</Text>
+            <Text style={styles.deliveryAddress}>Москва, Арбат 11/2</Text>
           </View>
           <Pressable
             style={styles.notificationBtn}
             onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
           >
-            <Ionicons name="notifications-outline" size={22} color={Colors.text} />
+            <Ionicons name="notifications-outline" size={21} color={Colors.text} />
             <View style={styles.notifDot} />
           </Pressable>
-        </View>
+        </Animated.View>
 
         {/* Search */}
-        <View style={styles.searchRow}>
+        <Animated.View entering={FadeInDown.delay(60).springify()} style={styles.searchRow}>
           <View style={styles.searchBox}>
-            <Ionicons name="search-outline" size={18} color={Colors.textSecondary} />
+            <Ionicons name="search-outline" size={17} color={Colors.textSecondary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search shipments..."
+              placeholder="Поиск посылок..."
               placeholderTextColor={Colors.textSecondary}
             />
           </View>
-          <Pressable style={styles.filterBtn} onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
-            <Ionicons name="options-outline" size={22} color={Colors.textLight} />
+          <Pressable
+            style={styles.filterBtn}
+            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+          >
+            <Ionicons name="options-outline" size={21} color="#FFF" />
           </Pressable>
-        </View>
+        </Animated.View>
 
         {/* Quick Actions */}
         <View style={styles.quickActions}>
           <QuickActionCard
-            title="New Delivery"
-            subtitle="Create shipment"
+            title="Новая доставка"
+            subtitle="Создать посылку"
             iconName="add-circle-outline"
-            color={Colors.accent}
+            color="#FFF"
+            bgColor={Colors.accent}
             onPress={() => router.push("/new-delivery")}
+            delay={120}
           />
           <QuickActionCard
-            title="Track Package"
-            subtitle="Real-time status"
+            title="Отследить"
+            subtitle="Статус в реальном времени"
             iconName="navigate-outline"
             color={Colors.info}
+            bgColor={Colors.cardBackground}
             onPress={() => router.push("/(tabs)/tracking")}
+            delay={180}
           />
         </View>
 
         {/* Current Shipment */}
         {currentShipment && (
-          <View>
+          <Animated.View entering={FadeInDown.delay(240).springify()}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Current Shipment</Text>
-              <TouchableOpacity onPress={() => router.push("/(tabs)/shipments")}>
-                <Text style={styles.seeAll}>See All</Text>
-              </TouchableOpacity>
+              <Text style={styles.sectionTitle}>Текущая посылка</Text>
+              <Pressable onPress={() => router.push("/(tabs)/shipments")}>
+                <Text style={styles.seeAll}>Все</Text>
+              </Pressable>
             </View>
             <Pressable
               style={styles.currentCard}
@@ -219,46 +263,54 @@ export default function HomeScreen() {
                 router.push({ pathname: "/shipment/[id]", params: { id: currentShipment.id } });
               }}
             >
+              {/* Accent bar */}
+              <View style={styles.cardAccentBar} />
+
               <View style={styles.currentCardTop}>
                 <View>
-                  <Text style={styles.currentTrackingId}>ID: {currentShipment.trackingId}</Text>
+                  <Text style={styles.currentTrackingId}>#{currentShipment.trackingId}</Text>
                   <Text style={styles.currentItemName}>{currentShipment.itemName}</Text>
                 </View>
                 <StatusBadge status={currentShipment.status} />
               </View>
 
-              <View style={styles.progressLabelRow}>
-                <Text style={styles.awayLabel}>
-                  {currentShipment.status === "Transit" ? "4h Away" : currentShipment.status}
+              <View style={styles.estimatedRow}>
+                <Ionicons name="time-outline" size={13} color={Colors.textSecondary} />
+                <Text style={styles.estimatedLabel}>
+                  {currentShipment.status === "Transit"
+                    ? "~4 часа до доставки"
+                    : STATUS_RU[currentShipment.status] ?? currentShipment.status}
                 </Text>
               </View>
 
-              <ProgressBar progress={currentShipment.progress} />
+              <AnimatedProgressBar progress={currentShipment.progress} />
 
               <View style={styles.locationRow}>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.locationDate}>{currentShipment.createdDate}</Text>
-                  <Text style={styles.locationCity}>{currentShipment.from}</Text>
+                  <Text style={styles.locationCity} numberOfLines={1}>{currentShipment.from}</Text>
                 </View>
-                <MaterialCommunityIcons name="package-variant" size={40} color="#E0C090" style={styles.packageImg} />
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.locationDate}>Estimated {currentShipment.estimatedDate}</Text>
-                  <Text style={styles.locationCity}>{currentShipment.to}</Text>
+                <View style={styles.truckWrap}>
+                  <MaterialCommunityIcons name="truck-fast-outline" size={28} color={Colors.accent} />
+                </View>
+                <View style={{ flex: 1, alignItems: "flex-end" }}>
+                  <Text style={styles.locationDate}>Ожидаем {currentShipment.estimatedDate}</Text>
+                  <Text style={styles.locationCity} numberOfLines={1}>{currentShipment.to}</Text>
                 </View>
               </View>
             </Pressable>
-          </View>
+          </Animated.View>
         )}
 
         {/* Recent Shipments */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Shipment</Text>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/shipments")}>
-            <Text style={styles.seeAll}>See All</Text>
-          </TouchableOpacity>
+          <Text style={styles.sectionTitle}>Недавние посылки</Text>
+          <Pressable onPress={() => router.push("/(tabs)/shipments")}>
+            <Text style={styles.seeAll}>Все</Text>
+          </Pressable>
         </View>
-        {recent.map((item) => (
-          <ShipmentCard key={item.id} item={item} />
+        {recent.map((item, i) => (
+          <ShipmentCard key={item.id} item={item} index={i} />
         ))}
       </ScrollView>
     </View>
@@ -277,13 +329,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingTop: 10,
+    paddingBottom: 18,
   },
   deliveryToRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+    marginBottom: 3,
   },
   deliveryToLabel: {
     fontFamily: "Poppins_400Regular",
@@ -291,32 +344,28 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   deliveryAddress: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 15,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 16,
     color: Colors.text,
   },
   notificationBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: Colors.cardBackground,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
     elevation: 2,
   },
   notifDot: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 9,
+    right: 9,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     backgroundColor: Colors.accent,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: Colors.cardBackground,
   },
   searchRow: {
@@ -331,12 +380,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cardBackground,
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     gap: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
     elevation: 1,
   },
   searchInput: {
@@ -346,8 +391,8 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   filterBtn: {
-    width: 48,
-    height: 48,
+    width: 50,
+    height: 50,
     borderRadius: 14,
     backgroundColor: Colors.text,
     alignItems: "center",
@@ -356,19 +401,14 @@ const styles = StyleSheet.create({
   quickActions: {
     flexDirection: "row",
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 26,
   },
   quickCard: {
     flex: 1,
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-    minHeight: 120,
+    minHeight: 130,
+    elevation: 3,
   },
   quickCardIcon: {
     width: 48,
@@ -385,7 +425,7 @@ const styles = StyleSheet.create({
   },
   quickCardSubtitle: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.textSecondary,
     marginTop: 2,
   },
@@ -396,8 +436,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 16,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 17,
     color: Colors.text,
   },
   seeAll: {
@@ -407,24 +447,32 @@ const styles = StyleSheet.create({
   },
   currentCard: {
     backgroundColor: Colors.cardBackground,
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 18,
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    marginBottom: 26,
+    overflow: "hidden",
     elevation: 4,
+  },
+  cardAccentBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: Colors.accent,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
   },
   currentCardTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: 10,
+    marginTop: 6,
   },
   currentTrackingId: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 16,
+    fontSize: 17,
     color: Colors.text,
   },
   currentItemName: {
@@ -433,35 +481,55 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  progressLabelRow: {
-    alignItems: "flex-end",
-    marginBottom: 8,
+  estimatedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 10,
   },
-  awayLabel: {
+  estimatedLabel: {
     fontFamily: "Poppins_500Medium",
     fontSize: 12,
     color: Colors.textSecondary,
   },
-  progressContainer: {
+  progressWrap: {
+    marginBottom: 16,
+  },
+  progressDots: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 14,
   },
   progressDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
     backgroundColor: "#E0E0E6",
   },
   progressDotActive: {
     backgroundColor: Colors.accent,
   },
-  progressLine: {
+  progressLineContainer: {
     flex: 1,
-    height: 2,
+    height: 3,
+    backgroundColor: "#E0E0E6",
+    borderRadius: 1.5,
+    overflow: "hidden",
+    position: "relative",
+  },
+  progressLineBase: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "#E0E0E6",
   },
-  progressLineActive: {
+  progressLineFill: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: Colors.accent,
   },
   locationRow: {
@@ -480,13 +548,26 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginTop: 2,
   },
-  packageImg: {
-    opacity: 0.8,
+  truckWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.accent + "12",
+    alignItems: "center",
+    justifyContent: "center",
   },
   badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  badgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   badgeText: {
     fontFamily: "Poppins_600SemiBold",
@@ -494,16 +575,12 @@ const styles = StyleSheet.create({
   },
   shipmentCard: {
     backgroundColor: Colors.cardBackground,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 14,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
     elevation: 2,
   },
   shipmentCardLeft: {
@@ -511,17 +588,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     gap: 12,
+    marginRight: 8,
   },
   packageIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.accent + "15",
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    backgroundColor: Colors.accent + "12",
     alignItems: "center",
     justifyContent: "center",
   },
   trackingId: {
-    fontFamily: "Poppins_600SemiBold",
+    fontFamily: "Poppins_700Bold",
     fontSize: 13,
     color: Colors.text,
   },
@@ -530,5 +608,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     marginTop: 1,
+  },
+  routeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 3,
+  },
+  routeText: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 10,
+    color: Colors.textSecondary,
+    maxWidth: 70,
   },
 });

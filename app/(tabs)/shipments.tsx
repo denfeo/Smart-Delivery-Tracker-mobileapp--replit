@@ -4,114 +4,126 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  TouchableOpacity,
   Pressable,
+  TextInput,
   Platform,
-  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Animated, {
+  FadeInDown,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  FadeInRight,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
-import { useDelivery, Shipment, ShipmentStatus } from "@/contexts/DeliveryContext";
+import { useDelivery, Shipment } from "@/contexts/DeliveryContext";
 
-const FILTERS: (ShipmentStatus | "All")[] = ["All", "Transit", "On Process", "Delivered", "Pending"];
+const STATUS_LABELS: Record<string, string> = {
+  Transit: "В пути",
+  Delivered: "Доставлено",
+  "On Process": "Обработка",
+  Pending: "Ожидает",
+};
 
-function StatusBadge({ status }: { status: string }) {
-  const color =
-    status === "Transit"
-      ? Colors.transit
-      : status === "Delivered"
-      ? Colors.success
-      : status === "On Process"
-      ? Colors.info
-      : Colors.accent;
-  return (
-    <View style={[styles.badge, { backgroundColor: color + "20" }]}>
-      <Text style={[styles.badgeText, { color }]}>{status}</Text>
-    </View>
-  );
-}
+const STATUS_COLORS: Record<string, string> = {
+  Transit: Colors.transit,
+  Delivered: Colors.success,
+  "On Process": Colors.info,
+  Pending: Colors.accent,
+};
 
-function ShipmentRow({ item, onDelete }: { item: Shipment; onDelete: () => void }) {
+const FILTERS = [
+  { key: "all", label: "Все" },
+  { key: "Transit", label: "В пути" },
+  { key: "On Process", label: "Обработка" },
+  { key: "Delivered", label: "Доставлено" },
+  { key: "Pending", label: "Ожидает" },
+];
+
+function ShipmentRow({ item, index }: { item: Shipment; index: number }) {
   const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-  const iconBg =
-    item.status === "Delivered"
-      ? Colors.success + "15"
-      : item.status === "Transit"
-      ? Colors.transit + "15"
-      : Colors.accent + "15";
-  const iconColor =
-    item.status === "Delivered"
-      ? Colors.success
-      : item.status === "Transit"
-      ? Colors.transit
-      : Colors.accent;
+  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const color = STATUS_COLORS[item.status] ?? Colors.accent;
 
   return (
-    <Animated.View entering={FadeInRight} style={animStyle}>
-      <Pressable
-        onPressIn={() => (scale.value = withSpring(0.97))}
-        onPressOut={() => (scale.value = withSpring(1))}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push({ pathname: "/shipment/[id]", params: { id: item.id } });
-        }}
-        onLongPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          Alert.alert("Delete Shipment", "Remove this shipment from your list?", [
-            { text: "Cancel", style: "cancel" },
-            { text: "Delete", style: "destructive", onPress: onDelete },
-          ]);
-        }}
-        style={styles.row}
-      >
-        <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>
-          <MaterialCommunityIcons
-            name={item.status === "Delivered" ? "package-variant-closed-check" : "package-variant"}
-            size={24}
-            color={iconColor}
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.rowTrackingId}>ID: {item.trackingId}</Text>
-          <Text style={styles.rowItemName} numberOfLines={1}>{item.itemName}</Text>
-          <View style={styles.rowMeta}>
-            <Ionicons name="location-outline" size={11} color={Colors.textSecondary} />
-            <Text style={styles.rowMetaText}>{item.from} → {item.to}</Text>
+    <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
+      <Animated.View style={scaleStyle}>
+        <Pressable
+          onPressIn={() => (scale.value = withSpring(0.97, { damping: 15 }))}
+          onPressOut={() => (scale.value = withSpring(1, { damping: 15 }))}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push({ pathname: "/shipment/[id]", params: { id: item.id } });
+          }}
+          style={styles.row}
+        >
+          <View style={[styles.rowIconWrap, { backgroundColor: color + "15" }]}>
+            <MaterialCommunityIcons
+              name={item.status === "Delivered" ? "package-variant-closed-check" : "package-variant-closed"}
+              size={26}
+              color={color}
+            />
           </View>
-        </View>
-        <View style={{ alignItems: "flex-end", gap: 6 }}>
-          <StatusBadge status={item.status} />
-          <Text style={styles.rowDate}>{item.createdDate}</Text>
-        </View>
-      </Pressable>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowItemName} numberOfLines={1}>{item.itemName}</Text>
+            <Text style={styles.rowTrackingId}>#{item.trackingId}</Text>
+            <View style={styles.rowRoute}>
+              <Ionicons name="radio-button-on" size={9} color={Colors.accent} />
+              <Text style={styles.rowRouteText} numberOfLines={1}>{item.from}</Text>
+              <Ionicons name="chevron-forward" size={9} color={Colors.textSecondary} />
+              <Text style={styles.rowRouteText} numberOfLines={1}>{item.to}</Text>
+            </View>
+          </View>
+          <View style={styles.rowRight}>
+            <View style={[styles.statusBadge, { backgroundColor: color + "15" }]}>
+              <View style={[styles.statusDot, { backgroundColor: color }]} />
+              <Text style={[styles.statusText, { color }]}>{STATUS_LABELS[item.status] ?? item.status}</Text>
+            </View>
+            <Text style={styles.rowDate}>{item.createdDate}</Text>
+          </View>
+        </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 }
 
 export default function ShipmentsScreen() {
   const insets = useSafeAreaInsets();
-  const { shipments, deleteShipment } = useDelivery();
-  const [filter, setFilter] = useState<ShipmentStatus | "All">("All");
-
+  const { shipments } = useDelivery();
+  const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const filtered = filter === "All" ? shipments : shipments.filter((s) => s.status === filter);
+
+  const filtered = shipments.filter((s) => {
+    const matchesFilter = activeFilter === "all" || s.status === activeFilter;
+    const q = search.trim().toLowerCase();
+    const matchesSearch =
+      q === "" ||
+      s.itemName.toLowerCase().includes(q) ||
+      s.trackingId.toLowerCase().includes(q) ||
+      s.from.toLowerCase().includes(q) ||
+      s.to.toLowerCase().includes(q);
+    return matchesFilter && matchesSearch;
+  });
+
+  const counts: Record<string, number> = {
+    all: shipments.length,
+    Transit: shipments.filter((s) => s.status === "Transit").length,
+    "On Process": shipments.filter((s) => s.status === "On Process").length,
+    Delivered: shipments.filter((s) => s.status === "Delivered").length,
+    Pending: shipments.filter((s) => s.status === "Pending").length,
+  };
 
   return (
     <View style={[styles.root, { paddingTop: topPad }]}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Shipments</Text>
+        <View>
+          <Text style={styles.headerTitle}>Мои посылки</Text>
+          <Text style={styles.headerSub}>{shipments.length} посылок всего</Text>
+        </View>
         <Pressable
           style={styles.addBtn}
           onPress={() => {
@@ -119,55 +131,74 @@ export default function ShipmentsScreen() {
             router.push("/new-delivery");
           }}
         >
-          <Ionicons name="add" size={22} color={Colors.textLight} />
+          <Ionicons name="add" size={22} color="#FFF" />
         </Pressable>
       </View>
 
-      {/* Filters */}
+      <View style={styles.searchRow}>
+        <Ionicons name="search-outline" size={17} color={Colors.textSecondary} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Поиск по названию или номеру..."
+          placeholderTextColor={Colors.textSecondary}
+          value={search}
+          onChangeText={setSearch}
+        />
+        {search.length > 0 && (
+          <Pressable onPress={() => setSearch("")}>
+            <Ionicons name="close-circle" size={17} color={Colors.textSecondary} />
+          </Pressable>
+        )}
+      </View>
+
       <FlatList
         horizontal
-        data={FILTERS}
-        keyExtractor={(item) => item}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filtersContent}
+        data={FILTERS}
+        keyExtractor={(item) => item.key}
+        contentContainerStyle={styles.filtersRow}
         renderItem={({ item }) => {
-          const active = filter === item;
+          const isActive = activeFilter === item.key;
           return (
             <Pressable
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
               onPress={() => {
-                Haptics.selectionAsync();
-                setFilter(item);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setActiveFilter(item.key);
               }}
-              style={[styles.filterChip, active && styles.filterChipActive]}
             >
-              <Text style={[styles.filterText, active && styles.filterTextActive]}>
-                {item}
+              <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                {item.label}
               </Text>
+              <View style={[styles.filterCount, isActive && styles.filterCountActive]}>
+                <Text style={[styles.filterCountText, isActive && styles.filterCountTextActive]}>
+                  {counts[item.key] ?? 0}
+                </Text>
+              </View>
             </Pressable>
           );
         }}
-        style={styles.filtersList}
       />
 
-      {/* List */}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <ShipmentRow item={item} onDelete={() => deleteShipment(item.id)} />
-        )}
+        renderItem={({ item, index }) => <ShipmentRow item={item} index={index} />}
         contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 90 },
+          styles.list,
+          { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={!!filtered.length}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="package-variant-closed-remove" size={56} color={Colors.border} />
-            <Text style={styles.emptyTitle}>No shipments</Text>
-            <Text style={styles.emptySubtitle}>
-              {filter === "All" ? "Create your first delivery" : `No ${filter} shipments`}
-            </Text>
+            <MaterialCommunityIcons name="package-variant-closed-remove" size={56} color={Colors.textSecondary} />
+            <Text style={styles.emptyTitle}>Посылок не найдено</Text>
+            <Text style={styles.emptySubtitle}>Попробуйте изменить фильтры или создать новую доставку</Text>
+            <Pressable style={styles.emptyBtn} onPress={() => router.push("/new-delivery")}>
+              <Ionicons name="add-circle-outline" size={17} color="#FFF" />
+              <Text style={styles.emptyBtnText}>Новая доставка</Text>
+            </Pressable>
           </View>
         }
       />
@@ -176,133 +207,61 @@ export default function ShipmentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 14,
-    paddingTop: 8,
+    paddingBottom: 16,
+    paddingTop: 10,
   },
-  title: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 24,
-    color: Colors.text,
-  },
+  headerTitle: { fontFamily: "Poppins_700Bold", fontSize: 22, color: Colors.text },
+  headerSub: { fontFamily: "Poppins_400Regular", fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
   addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center", elevation: 4,
   },
-  filtersList: {
-    marginBottom: 8,
+  searchRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: Colors.cardBackground, borderRadius: 14,
+    marginHorizontal: 20, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14, elevation: 1,
   },
-  filtersContent: {
-    paddingHorizontal: 20,
-    gap: 8,
-    paddingBottom: 8,
-  },
+  searchInput: { flex: 1, fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.text },
+  filtersRow: { paddingHorizontal: 20, gap: 8, marginBottom: 14 },
   filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 22, backgroundColor: Colors.cardBackground,
   },
-  filterChipActive: {
-    backgroundColor: Colors.accent,
-    borderColor: Colors.accent,
-  },
-  filterText: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  filterTextActive: {
-    color: Colors.textLight,
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-  },
+  filterChipActive: { backgroundColor: Colors.accent },
+  filterChipText: { fontFamily: "Poppins_500Medium", fontSize: 13, color: Colors.textSecondary },
+  filterChipTextActive: { color: "#FFF" },
+  filterCount: { backgroundColor: Colors.background, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
+  filterCountActive: { backgroundColor: "rgba(255,255,255,0.25)" },
+  filterCountText: { fontFamily: "Poppins_600SemiBold", fontSize: 10, color: Colors.textSecondary },
+  filterCountTextActive: { color: "#FFF" },
+  list: { paddingHorizontal: 20 },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 10,
-    gap: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: Colors.cardBackground, borderRadius: 18, padding: 14, marginBottom: 10, elevation: 2,
   },
-  rowIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
+  rowIconWrap: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 12 },
+  rowInfo: { flex: 1, marginRight: 10 },
+  rowItemName: { fontFamily: "Poppins_600SemiBold", fontSize: 14, color: Colors.text },
+  rowTrackingId: { fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
+  rowRoute: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  rowRouteText: { fontFamily: "Poppins_400Regular", fontSize: 10, color: Colors.textSecondary, maxWidth: 65 },
+  rowRight: { alignItems: "flex-end", gap: 6 },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 9 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontFamily: "Poppins_600SemiBold", fontSize: 10 },
+  rowDate: { fontFamily: "Poppins_400Regular", fontSize: 10, color: Colors.textSecondary },
+  emptyState: { alignItems: "center", paddingTop: 60, paddingHorizontal: 40, gap: 10 },
+  emptyTitle: { fontFamily: "Poppins_700Bold", fontSize: 18, color: Colors.text, marginTop: 8 },
+  emptySubtitle: { fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  emptyBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: Colors.accent, borderRadius: 14, paddingHorizontal: 20, paddingVertical: 12, marginTop: 16, elevation: 3,
   },
-  rowTrackingId: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
-    color: Colors.text,
-  },
-  rowItemName: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 1,
-  },
-  rowMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    marginTop: 4,
-  },
-  rowMetaText: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
-  rowDate: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  badgeText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 11,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingTop: 80,
-    gap: 12,
-  },
-  emptyTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 18,
-    color: Colors.text,
-  },
-  emptySubtitle: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
+  emptyBtnText: { fontFamily: "Poppins_600SemiBold", fontSize: 14, color: "#FFF" },
 });

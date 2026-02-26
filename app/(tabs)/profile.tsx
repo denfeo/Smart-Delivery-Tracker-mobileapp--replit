@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,377 +11,346 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  withSpring,
+} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Colors from "@/constants/colors";
 import { useDelivery } from "@/contexts/DeliveryContext";
 
-function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
+function AnimatedCounter({ target, suffix = "" }: { target: number; suffix?: string }) {
+  const [displayed, setDisplayed] = useState(0);
+
+  useEffect(() => {
+    let start = 0;
+    const total = target;
+    const duration = 900;
+    const step = 30;
+    const increment = total / (duration / step);
+    const timer = setInterval(() => {
+      start += increment;
+      if (start >= total) {
+        setDisplayed(total);
+        clearInterval(timer);
+      } else {
+        setDisplayed(Math.floor(start));
+      }
+    }, step);
+    return () => clearInterval(timer);
+  }, [target]);
+
   return (
-    <View style={[styles.statCard, { borderTopColor: color }]}>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    <Text style={styles.statValue}>
+      {displayed}
+      {suffix}
+    </Text>
   );
 }
+
+type SettingRowProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color?: string;
+  rightElement?: React.ReactNode;
+  onPress?: () => void;
+  delay?: number;
+};
 
 function SettingRow({
   icon,
   label,
-  value,
-  toggle,
-  onToggle,
+  color = Colors.text,
+  rightElement,
   onPress,
-  danger,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value?: string;
-  toggle?: boolean;
-  onToggle?: (v: boolean) => void;
-  onPress?: () => void;
-  danger?: boolean;
-}) {
+  delay = 0,
+}: SettingRowProps) {
+  const scale = useSharedValue(1);
+  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
   return (
-    <Pressable
-      style={styles.settingRow}
-      onPress={() => {
-        if (onPress) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onPress();
-        }
-      }}
-    >
-      <View style={[styles.settingIcon, { backgroundColor: danger ? Colors.accent + "15" : Colors.background }]}>
-        <Ionicons name={icon} size={18} color={danger ? Colors.accent : Colors.textSecondary} />
-      </View>
-      <Text style={[styles.settingLabel, danger && { color: Colors.accent }]}>{label}</Text>
-      {toggle !== undefined ? (
-        <Switch
-          value={toggle}
-          onValueChange={(v) => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onToggle?.(v);
+    <Animated.View entering={FadeInDown.delay(delay).springify()}>
+      <Animated.View style={scaleStyle}>
+        <Pressable
+          onPressIn={() => { if (onPress) scale.value = withSpring(0.98, { damping: 15 }); }}
+          onPressOut={() => (scale.value = withSpring(1, { damping: 15 }))}
+          onPress={() => {
+            if (onPress) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onPress();
+            }
           }}
-          trackColor={{ false: Colors.border, true: Colors.accent }}
-          thumbColor="#FFF"
-        />
-      ) : (
-        <View style={styles.settingRight}>
-          {value && <Text style={styles.settingValue}>{value}</Text>}
-          {onPress && <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />}
-        </View>
-      )}
-    </Pressable>
+          style={styles.settingRow}
+        >
+          <View style={[styles.settingIconWrap, { backgroundColor: color + "15" }]}>
+            <Ionicons name={icon} size={18} color={color} />
+          </View>
+          <Text style={[styles.settingLabel, { color }]}>{label}</Text>
+          <View style={{ flex: 1 }} />
+          {rightElement ?? (
+            onPress ? <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} /> : null
+          )}
+        </Pressable>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { shipments } = useDelivery();
+  const { shipments, clearAllData } = useDelivery();
   const [notifications, setNotifications] = useState(true);
   const [liveTracking, setLiveTracking] = useState(true);
-
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const totalShipments = shipments.length;
-  const delivered = shipments.filter((s) => s.status === "Delivered").length;
+  const totalDeliveries = shipments.length;
   const inTransit = shipments.filter((s) => s.status === "Transit").length;
+  const delivered = shipments.filter((s) => s.status === "Delivered").length;
 
-  const handleClearData = () => {
-    Alert.alert("Clear All Data", "This will remove all shipments. Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Clear",
-        style: "destructive",
-        onPress: async () => {
-          await AsyncStorage.clear();
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          Alert.alert("Done", "All data cleared. Restart the app to see changes.");
+  const handleClear = () => {
+    Alert.alert(
+      "Очистить данные",
+      "Все посылки будут удалены. Это действие нельзя отменить.",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Удалить",
+          style: "destructive",
+          onPress: () => {
+            clearAllData();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   return (
     <View style={[styles.root, { paddingTop: topPad }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: bottomPad + 100 }}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 100 },
+        ]}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Profile</Text>
-        </View>
-
-        {/* Avatar */}
-        <View style={styles.avatarSection}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarInitials}>AK</Text>
+        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.profileHeader}>
+          <View style={styles.avatarWrap}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>АК</Text>
+            </View>
+            <View style={styles.premiumBadge}>
+              <MaterialCommunityIcons name="crown" size={11} color="#FFD60A" />
+            </View>
           </View>
-          <Text style={styles.userName}>Ahmad Kawsar</Text>
-          <Text style={styles.userEmail}>ahmad.kawsar@gmail.com</Text>
-          <View style={styles.memberBadge}>
-            <Ionicons name="star" size={12} color={Colors.accent} />
-            <Text style={styles.memberText}>Premium Member</Text>
+          <View>
+            <Text style={styles.profileName}>Алексей Кузнецов</Text>
+            <Text style={styles.profileEmail}>aleksey@example.com</Text>
+            <View style={styles.premiumChip}>
+              <MaterialCommunityIcons name="crown" size={11} color="#FFD60A" />
+              <Text style={styles.premiumText}>Премиум участник</Text>
+            </View>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Stats */}
-        <View style={styles.statsRow}>
-          <StatCard label="Total" value={String(totalShipments)} color={Colors.accent} />
-          <StatCard label="Delivered" value={String(delivered)} color={Colors.success} />
-          <StatCard label="In Transit" value={String(inTransit)} color={Colors.transit} />
-        </View>
+        <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <AnimatedCounter target={totalDeliveries} />
+            <Text style={styles.statLabel}>Всего</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <AnimatedCounter target={inTransit} />
+            <Text style={styles.statLabel}>В пути</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <AnimatedCounter target={delivered} />
+            <Text style={styles.statLabel}>Доставлено</Text>
+          </View>
+        </Animated.View>
 
-        {/* Settings Sections */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
+        {/* Account section */}
+        <Animated.View entering={FadeInDown.delay(160).springify()}>
+          <Text style={styles.sectionLabel}>Аккаунт</Text>
           <View style={styles.card}>
             <SettingRow
-              icon="person-outline"
-              label="Personal Info"
-              onPress={() => Alert.alert("Personal Info", "Edit your profile information")}
+              icon="person-circle-outline"
+              label="Личные данные"
+              color={Colors.info}
+              onPress={() => {}}
+              delay={160}
             />
             <View style={styles.divider} />
             <SettingRow
               icon="location-outline"
-              label="Saved Addresses"
-              value="3 saved"
-              onPress={() => Alert.alert("Addresses", "Manage saved delivery addresses")}
+              label="Сохранённые адреса"
+              color={Colors.accent}
+              onPress={() => {}}
+              delay={200}
             />
             <View style={styles.divider} />
             <SettingRow
               icon="card-outline"
-              label="Payment Methods"
-              onPress={() => Alert.alert("Payment", "Manage payment methods")}
+              label="Способы оплаты"
+              color={Colors.success}
+              onPress={() => {}}
+              delay={240}
             />
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
+        {/* Preferences section */}
+        <Animated.View entering={FadeInDown.delay(280).springify()}>
+          <Text style={styles.sectionLabel}>Настройки</Text>
           <View style={styles.card}>
             <SettingRow
               icon="notifications-outline"
-              label="Push Notifications"
-              toggle={notifications}
-              onToggle={setNotifications}
+              label="Уведомления"
+              color={Colors.warning}
+              delay={280}
+              rightElement={
+                <Switch
+                  value={notifications}
+                  onValueChange={(v) => {
+                    setNotifications(v);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                  thumbColor={Platform.OS === "android" ? Colors.cardBackground : undefined}
+                />
+              }
             />
             <View style={styles.divider} />
             <SettingRow
               icon="navigate-outline"
-              label="Live Tracking"
-              toggle={liveTracking}
-              onToggle={setLiveTracking}
+              label="Слежение в реальном времени"
+              color={Colors.transit}
+              delay={320}
+              rightElement={
+                <Switch
+                  value={liveTracking}
+                  onValueChange={(v) => {
+                    setLiveTracking(v);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                  thumbColor={Platform.OS === "android" ? Colors.cardBackground : undefined}
+                />
+              }
             />
             <View style={styles.divider} />
             <SettingRow
               icon="language-outline"
-              label="Language"
-              value="English"
-              onPress={() => Alert.alert("Language", "Select your preferred language")}
+              label="Язык: Русский"
+              color={Colors.info}
+              onPress={() => {}}
+              delay={360}
             />
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
+        {/* Support section */}
+        <Animated.View entering={FadeInDown.delay(400).springify()}>
+          <Text style={styles.sectionLabel}>Поддержка</Text>
           <View style={styles.card}>
             <SettingRow
               icon="help-circle-outline"
-              label="Help Center"
-              onPress={() => Alert.alert("Help", "Visit our help center")}
+              label="Центр помощи"
+              color={Colors.info}
+              onPress={() => {}}
+              delay={400}
             />
             <View style={styles.divider} />
             <SettingRow
-              icon="chatbubble-outline"
-              label="Contact Support"
-              onPress={() => Alert.alert("Support", "support@deliverease.com")}
+              icon="chatbubble-ellipses-outline"
+              label="Написать в поддержку"
+              color={Colors.success}
+              onPress={() => {}}
+              delay={440}
             />
             <View style={styles.divider} />
             <SettingRow
               icon="star-outline"
-              label="Rate the App"
-              onPress={() => Alert.alert("Rate Us", "Thank you for your feedback!")}
+              label="Оценить приложение"
+              color={Colors.warning}
+              onPress={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)}
+              delay={480}
             />
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.section}>
+        {/* Danger zone */}
+        <Animated.View entering={FadeInDown.delay(520).springify()}>
+          <Text style={styles.sectionLabel}>Данные</Text>
           <View style={styles.card}>
             <SettingRow
               icon="trash-outline"
-              label="Clear All Data"
-              onPress={handleClearData}
-              danger
+              label="Очистить все данные"
+              color="#FF3B30"
+              onPress={handleClear}
+              delay={520}
             />
           </View>
-        </View>
+        </Animated.View>
 
-        <Text style={styles.version}>DeliverEase v1.0.0</Text>
+        <Animated.View entering={FadeInDown.delay(560).springify()} style={styles.versionRow}>
+          <Text style={styles.versionText}>Версия 1.0.0 • Orbix Delivery</Text>
+        </Animated.View>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
+  root: { flex: 1, backgroundColor: Colors.background },
+  scrollContent: { paddingHorizontal: 20 },
+  profileHeader: {
+    flexDirection: "row", alignItems: "center", gap: 16,
+    paddingTop: 10, paddingBottom: 24,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    paddingTop: 8,
+  avatarWrap: { position: "relative" },
+  avatar: {
+    width: 70, height: 70, borderRadius: 35,
+    backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center",
   },
-  title: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 24,
-    color: Colors.text,
+  avatarText: { fontFamily: "Poppins_700Bold", fontSize: 24, color: "#FFF" },
+  premiumBadge: {
+    position: "absolute", bottom: 0, right: 0,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: "#1C1C1E", alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: Colors.cardBackground,
   },
-  avatarSection: {
-    alignItems: "center",
-    paddingVertical: 24,
-    paddingHorizontal: 20,
+  profileName: { fontFamily: "Poppins_700Bold", fontSize: 18, color: Colors.text },
+  profileEmail: { fontFamily: "Poppins_400Regular", fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  premiumChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "#FFD60A20", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginTop: 6,
+    alignSelf: "flex-start",
   },
-  avatarCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-    shadowColor: Colors.accent,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  avatarInitials: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 28,
-    color: "#FFF",
-  },
-  userName: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 20,
-    color: Colors.text,
-  },
-  userEmail: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  memberBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: Colors.accent + "15",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-    marginTop: 10,
-  },
-  memberText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    color: Colors.accent,
-  },
+  premiumText: { fontFamily: "Poppins_600SemiBold", fontSize: 11, color: "#B8860B" },
   statsRow: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 24,
+    flexDirection: "row", backgroundColor: Colors.cardBackground, borderRadius: 22,
+    padding: 20, marginBottom: 24, alignItems: "center", elevation: 3,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    borderTopWidth: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+  statItem: { flex: 1, alignItems: "center" },
+  statValue: { fontFamily: "Poppins_700Bold", fontSize: 26, color: Colors.text },
+  statLabel: { fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  statDivider: { width: 1, height: 40, backgroundColor: Colors.border },
+  sectionLabel: {
+    fontFamily: "Poppins_700Bold", fontSize: 15, color: Colors.text,
+    marginBottom: 10, marginTop: 4,
   },
-  statValue: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-  },
-  statLabel: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  card: {
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 18,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  settingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-  },
-  settingIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  settingLabel: {
-    flex: 1,
-    fontFamily: "Poppins_500Medium",
-    fontSize: 14,
-    color: Colors.text,
-  },
-  settingRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  settingValue: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginLeft: 62,
-  },
-  version: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 12,
-    color: Colors.textSecondary,
-    textAlign: "center",
-    paddingBottom: 12,
-  },
+  card: { backgroundColor: Colors.cardBackground, borderRadius: 22, marginBottom: 20, overflow: "hidden", elevation: 2 },
+  settingRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14 },
+  settingIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", marginRight: 12 },
+  settingLabel: { fontFamily: "Poppins_500Medium", fontSize: 14, color: Colors.text },
+  divider: { height: 1, backgroundColor: Colors.border, marginLeft: 64 },
+  versionRow: { alignItems: "center", paddingVertical: 8 },
+  versionText: { fontFamily: "Poppins_400Regular", fontSize: 12, color: Colors.textSecondary },
 });

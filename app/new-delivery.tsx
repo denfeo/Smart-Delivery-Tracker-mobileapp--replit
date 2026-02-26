@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import Colors from "@/constants/colors";
 import { useDelivery, Courier } from "@/contexts/DeliveryContext";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
@@ -37,7 +38,8 @@ function Field({
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>
-        {label} {optional && <Text style={styles.optional}>(optional)</Text>}
+        {label}{" "}
+        {optional && <Text style={styles.optional}>(необязательно)</Text>}
       </Text>
       <View style={styles.fieldBox}>
         <Ionicons name={icon} size={18} color={Colors.textSecondary} />
@@ -65,7 +67,7 @@ function CourierPicker({
 }) {
   return (
     <View>
-      <Text style={styles.fieldLabel}>Assign Courier</Text>
+      <Text style={styles.fieldLabel}>Назначить курьера</Text>
       <View style={styles.courierPicker}>
         {couriers.map((c) => {
           const active = c.id === selectedId;
@@ -121,15 +123,23 @@ export default function NewDeliveryScreen() {
 
   const handleSubmit = () => {
     if (!itemName.trim() || !from.trim() || !to.trim() || !customer.trim()) {
-      Alert.alert("Missing Fields", "Please fill in item name, from, to, and customer name.");
+      Alert.alert(
+        "Заполните все поля",
+        "Укажите название товара, адрес отправки, адрес доставки и имя клиента."
+      );
       return;
     }
     const courier = couriers.find((c) => c.id === selectedCourierId) ?? couriers[0];
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
+
+    const MONTHS_RU = [
+      "янв", "фев", "мар", "апр", "май", "июн",
+      "июл", "авг", "сен", "окт", "ноя", "дек",
+    ];
     const fmt = (d: Date) =>
-      `${d.getDate()} ${d.toLocaleString("default", { month: "short" })} ${d.getFullYear()}`;
+      `${d.getDate()} ${MONTHS_RU[d.getMonth()]} ${d.getFullYear()}`;
 
     addShipment({
       itemName: itemName.trim(),
@@ -139,9 +149,9 @@ export default function NewDeliveryScreen() {
       createdDate: fmt(today),
       estimatedDate: fmt(tomorrow),
       customer: customer.trim(),
-      orderCost: orderCost.trim() ? `$${orderCost.trim()}` : "$0.00",
-      quantity: quantity.trim() ? `${quantity.trim()} Box` : "1 Box",
-      weight: weight.trim() ? `${weight.trim()} Kg` : "1 Kg",
+      orderCost: orderCost.trim() ? `${orderCost.trim()} ₽` : "0 ₽",
+      quantity: quantity.trim() ? `${quantity.trim()} шт.` : "1 шт.",
+      weight: weight.trim() ? `${weight.trim()} кг` : "1 кг",
       courierId: courier.id,
       courierName: courier.name,
       courierAvatar: courier.avatar,
@@ -154,7 +164,6 @@ export default function NewDeliveryScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: topPad }]}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable
           onPress={() => {
@@ -165,7 +174,7 @@ export default function NewDeliveryScreen() {
         >
           <Ionicons name="close" size={22} color={Colors.text} />
         </Pressable>
-        <Text style={styles.title}>New Delivery</Text>
+        <Text style={styles.title}>Новая доставка</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -175,231 +184,156 @@ export default function NewDeliveryScreen() {
         bottomOffset={60}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Package Info */}
-        <Text style={styles.sectionTitle}>Package Info</Text>
-        <Field
-          label="Item Name"
-          placeholder="e.g. MacBook Pro"
-          value={itemName}
-          onChangeText={setItemName}
-          icon="cube-outline"
-        />
-        <Field
-          label="Quantity"
-          placeholder="e.g. 1"
-          value={quantity}
-          onChangeText={setQuantity}
-          icon="layers-outline"
-          keyboardType="numeric"
-          optional
-        />
-        <Field
-          label="Weight (Kg)"
-          placeholder="e.g. 2.5"
-          value={weight}
-          onChangeText={setWeight}
-          icon="scale-outline"
-          keyboardType="decimal-pad"
-          optional
-        />
+        <Animated.View entering={FadeInDown.delay(0).springify()}>
+          <Text style={styles.sectionTitle}>Информация о посылке</Text>
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(60).springify()}>
+          <Field
+            label="Название товара"
+            placeholder="напр. MacBook Pro"
+            value={itemName}
+            onChangeText={setItemName}
+            icon="cube-outline"
+          />
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(90).springify()}>
+          <Field
+            label="Количество"
+            placeholder="напр. 1"
+            value={quantity}
+            onChangeText={setQuantity}
+            icon="layers-outline"
+            keyboardType="numeric"
+            optional
+          />
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(120).springify()}>
+          <Field
+            label="Вес (кг)"
+            placeholder="напр. 2.5"
+            value={weight}
+            onChangeText={setWeight}
+            icon="scale-outline"
+            keyboardType="decimal-pad"
+            optional
+          />
+        </Animated.View>
 
-        {/* Route */}
-        <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Route</Text>
-        <Field
-          label="From"
-          placeholder="e.g. Diriyah, Riyadh"
-          value={from}
-          onChangeText={setFrom}
-          icon="radio-button-on-outline"
-        />
-        <Field
-          label="To"
-          placeholder="e.g. Jawhra, Jeddah"
-          value={to}
-          onChangeText={setTo}
-          icon="location-outline"
-        />
+        <Animated.View entering={FadeInDown.delay(160).springify()}>
+          <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Маршрут</Text>
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(190).springify()}>
+          <Field
+            label="Откуда"
+            placeholder="напр. Москва, Арбат"
+            value={from}
+            onChangeText={setFrom}
+            icon="radio-button-on-outline"
+          />
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(220).springify()}>
+          <Field
+            label="Куда"
+            placeholder="напр. Санкт-Петербург, Невский"
+            value={to}
+            onChangeText={setTo}
+            icon="location-outline"
+          />
+        </Animated.View>
 
-        {/* Customer */}
-        <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Customer</Text>
-        <Field
-          label="Customer Name"
-          placeholder="e.g. Ahmad Kawsar"
-          value={customer}
-          onChangeText={setCustomer}
-          icon="person-outline"
-        />
-        <Field
-          label="Order Cost"
-          placeholder="e.g. 120.00"
-          value={orderCost}
-          onChangeText={setOrderCost}
-          icon="card-outline"
-          keyboardType="decimal-pad"
-          optional
-        />
+        <Animated.View entering={FadeInDown.delay(260).springify()}>
+          <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Клиент</Text>
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(290).springify()}>
+          <Field
+            label="Имя клиента"
+            placeholder="напр. Иван Иванов"
+            value={customer}
+            onChangeText={setCustomer}
+            icon="person-outline"
+          />
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(320).springify()}>
+          <Field
+            label="Стоимость заказа"
+            placeholder="напр. 1500"
+            value={orderCost}
+            onChangeText={setOrderCost}
+            icon="card-outline"
+            keyboardType="decimal-pad"
+            optional
+          />
+        </Animated.View>
 
-        {/* Courier */}
-        <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Courier</Text>
-        <CourierPicker
-          couriers={couriers}
-          selectedId={selectedCourierId}
-          onSelect={setSelectedCourierId}
-        />
+        <Animated.View entering={FadeInDown.delay(360).springify()}>
+          <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Курьер</Text>
+          <CourierPicker
+            couriers={couriers}
+            selectedId={selectedCourierId}
+            onSelect={setSelectedCourierId}
+          />
+        </Animated.View>
 
-        {/* Submit */}
-        <Pressable style={styles.submitBtn} onPress={handleSubmit}>
-          <Ionicons name="checkmark-circle-outline" size={20} color="#FFF" />
-          <Text style={styles.submitBtnText}>Create Shipment</Text>
-        </Pressable>
+        <Animated.View entering={FadeInDown.delay(400).springify()}>
+          <Pressable style={styles.submitBtn} onPress={handleSubmit}>
+            <Ionicons name="checkmark-circle-outline" size={20} color="#FFF" />
+            <Text style={styles.submitBtnText}>Создать посылку</Text>
+          </Pressable>
+        </Animated.View>
       </KeyboardAwareScrollViewCompat>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    paddingTop: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingBottom: 14, paddingTop: 8,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
     backgroundColor: Colors.cardBackground,
   },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.background,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: Colors.background, alignItems: "center", justifyContent: "center",
   },
-  title: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 18,
-    color: Colors.text,
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    gap: 10,
-  },
+  title: { fontFamily: "Poppins_700Bold", fontSize: 18, color: Colors.text },
+  content: { paddingHorizontal: 20, paddingTop: 20, gap: 10 },
   sectionTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 4,
+    fontFamily: "Poppins_600SemiBold", fontSize: 13, color: Colors.textSecondary,
+    textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 6,
   },
-  fieldWrap: {
-    gap: 4,
-  },
-  fieldLabel: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 13,
-    color: Colors.text,
-  },
-  optional: {
-    fontFamily: "Poppins_400Regular",
-    color: Colors.textSecondary,
-    fontSize: 12,
-  },
+  fieldWrap: { gap: 4 },
+  fieldLabel: { fontFamily: "Poppins_500Medium", fontSize: 13, color: Colors.text },
+  optional: { fontFamily: "Poppins_400Regular", color: Colors.textSecondary, fontSize: 12 },
   fieldBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: Colors.cardBackground, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 13, gap: 10,
+    borderWidth: 1, borderColor: Colors.border,
   },
-  fieldInput: {
-    flex: 1,
-    fontFamily: "Poppins_400Regular",
-    fontSize: 14,
-    color: Colors.text,
-  },
-  courierPicker: {
-    flexDirection: "row",
-    gap: 10,
-  },
+  fieldInput: { flex: 1, fontFamily: "Poppins_400Regular", fontSize: 14, color: Colors.text },
+  courierPicker: { flexDirection: "row", gap: 10 },
   courierOption: {
-    flex: 1,
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 16,
-    padding: 12,
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    gap: 6,
+    flex: 1, backgroundColor: Colors.cardBackground, borderRadius: 16, padding: 12,
+    alignItems: "center", borderWidth: 1.5, borderColor: Colors.border, gap: 6,
   },
-  courierOptionActive: {
-    borderColor: Colors.accent,
-    backgroundColor: Colors.accent + "08",
-  },
+  courierOptionActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + "08" },
   courierAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.border,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.border,
+    alignItems: "center", justifyContent: "center",
   },
-  courierAvatarActive: {
-    backgroundColor: Colors.accent,
-  },
-  courierAvatarText: {
-    fontFamily: "Poppins_700Bold",
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  courierName: {
-    fontFamily: "Poppins_500Medium",
-    fontSize: 12,
-    color: Colors.textSecondary,
-    textAlign: "center",
-  },
-  courierNameActive: {
-    color: Colors.accent,
-  },
-  courierRating: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  },
-  courierRatingText: {
-    fontFamily: "Poppins_400Regular",
-    fontSize: 11,
-    color: Colors.transit,
-  },
+  courierAvatarActive: { backgroundColor: Colors.accent },
+  courierAvatarText: { fontFamily: "Poppins_700Bold", fontSize: 12, color: Colors.textSecondary },
+  courierName: { fontFamily: "Poppins_500Medium", fontSize: 12, color: Colors.textSecondary, textAlign: "center" },
+  courierNameActive: { color: Colors.accent },
+  courierRating: { flexDirection: "row", alignItems: "center", gap: 3 },
+  courierRatingText: { fontFamily: "Poppins_400Regular", fontSize: 11, color: Colors.transit },
   submitBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: Colors.accent,
-    borderRadius: 16,
-    paddingVertical: 16,
-    marginTop: 8,
-    shadowColor: Colors.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: Colors.accent, borderRadius: 16, paddingVertical: 16, marginTop: 8,
+    shadowColor: Colors.accent, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
   },
-  submitBtnText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 16,
-    color: "#FFF",
-  },
+  submitBtnText: { fontFamily: "Poppins_600SemiBold", fontSize: 16, color: "#FFF" },
 });

@@ -1,7 +1,7 @@
-# DeliverEase — Delivery Tracking App
+# Orbix Delivery — Приложение для отслеживания доставок
 
 ## Overview
-A full-featured mobile app for tracking parcel delivery with real-time UI, courier chat, and full logistics management.
+Полнофункциональное мобильное приложение для отслеживания посылок с интерфейсом на русском языке, анимациями в реальном времени, чатом с курьером и полным циклом управления логистикой.
 
 ## Tech Stack
 - **Frontend**: React Native (Expo SDK 54), Expo Router (file-based routing)
