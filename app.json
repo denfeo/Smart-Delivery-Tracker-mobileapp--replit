@@ -49,11 +49,12 @@
   "expo": {
     "name": "Smart Delivery Tracker",
     "slug": "smart-delivery-tracker",
-    "scheme": "your-app-scheme",
     "web": {
       "bundler": "metro",
-      "output": "static",
+      "output": "single",
       "publicPath": "/Smart-Delivery-Tracker-mobileapp--replit/"
     }
+  }
+}
   }
 }
